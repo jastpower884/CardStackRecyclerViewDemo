@@ -2,7 +2,7 @@ package com.jastzeonic.cardstackrecyclerviewdemo
 
 import android.support.v7.widget.RecyclerView
 import android.util.Log
-import android.view.ViewGroup
+import java.text.FieldPosition
 
 class CardStackLayoutManager(
     private var mItemHeightWidthRatio: Float = 0.9f,
@@ -18,7 +18,6 @@ class CardStackLayoutManager(
         val HORIZONTAL = 0
     }
 
-    private var firstVisibleItemIndex = 0
 
     override fun generateDefaultLayoutParams(): RecyclerView.LayoutParams {
         return RecyclerView.LayoutParams(
@@ -43,8 +42,11 @@ class CardStackLayoutManager(
             val width = getDecoratedMeasuredWidth(view)
             val height = getDecoratedMeasuredHeight(view)
 
+
             val lp = (view.layoutParams as RecyclerView.LayoutParams)
 
+            itemHeight = height / 2
+            firstItemStartPoint = lp.topMargin
             val left = lp.leftMargin
             val top = if (totalHeight == 0) {
                 lp.topMargin
@@ -56,7 +58,13 @@ class CardStackLayoutManager(
             // 5. layout View 本身
             layoutDecorated(view, left, top, right, bottom)
 
-            totalHeight += (height / 2)
+            // 這樣判斷是因為如果直接除 2
+            // 尾巴會少一半
+            totalHeight += if (index < itemCount - 1) {
+                (height / 2)
+            } else {
+                height + lp.bottomMargin
+            }
         }
 
 
@@ -65,37 +73,71 @@ class CardStackLayoutManager(
     }
 
 
+    private var itemHeight = 0
+    private var firstVisibleItemIndex = 0
+    private var firstItemStartPoint = 0
+
+    private fun dealCard(dy: Int, startMovementPosition: Int) {
+
+        for (index in startMovementPosition until itemCount) {
+            val view = findViewByPosition(index) ?: return
+
+            val left = getDecoratedLeft(view)
+            val right = getDecoratedRight(view)
+            val bottom = getDecoratedBottom(view) - dy
+            val decoratedTop = getDecoratedTop(view)
+
+            //這裡是為了應付第一個 item 的 Margin
+            val top = if (index == startMovementPosition
+                && decoratedTop - dy <= firstItemStartPoint
+            ) {
+                firstItemStartPoint
+            } else {
+                decoratedTop - dy
+
+            }
+
+            layoutDecorated(view, left, top, right, bottom)
+        }
+    }
+
     var offsetCount = 0
 
-    override fun scrollVerticallyBy(dy: Int, recycler: RecyclerView.Recycler?, state: RecyclerView.State?): Int {
-
+    override fun scrollVerticallyBy(dy: Int, recycler: RecyclerView.Recycler, state: RecyclerView.State?): Int {
         offsetCount += dy
-        if (dy < 0) {
-            return if (offsetCount <= 0) {
-                // 這是因為 dy 滑動量可能會直接超過判斷量
-                // 例如 offsetCount = 10 但 dy = 20 的情況
-                // 這樣會於下 10 需要滑動
-                // 這一步就是將 10 這個值算出來
-                val remainingOffset = dy + Math.abs(offsetCount)
-                offsetChildrenVertical(-remainingOffset)
-                offsetCount = 0
-                0
-            } else {
-                offsetChildrenVertical(-dy)
-                dy
+        val moveStartPosition = firstVisibleItemIndex + 1
+        val result: Int
+        val offset: Int
+        when {
+            offsetCount <= 0 -> {
+                offset = dy + Math.abs(offsetCount)
+                result = if (firstVisibleItemIndex != 0) {
+                    offsetCount = itemHeight
+                    firstVisibleItemIndex--
+                    dy
+                } else {
+                    offsetCount = 0
+                    0
+                }
             }
-        } else if (dy > 0) {
-            return if (offsetCount >= (totalHeight - height)) {
-                val remainingOffset = (totalHeight - height) - (offsetCount - dy)
-                offsetChildrenVertical(-remainingOffset)
-                offsetCount = totalHeight - height
-                0
-            } else {
-                offsetChildrenVertical(-dy)
-                dy
+            offsetCount >= itemHeight -> {
+                offset = itemHeight - (offsetCount - dy)
+                offsetCount = 0
+                result = if (firstVisibleItemIndex < itemCount) {
+                    firstVisibleItemIndex++
+                    dy
+                } else {
+                    0
+                }
+            }
+            else -> {
+                offset = dy
+                result = dy
             }
         }
-        return 0
+
+        dealCard(offset, moveStartPosition)
+        return result
     }
 
     override fun canScrollVertically(): Boolean {
