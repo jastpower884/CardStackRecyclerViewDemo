@@ -20,7 +20,7 @@ class MainActivity : AppCompatActivity() {
         val adapter = RecycleViewAdapter(list)
 
 
-        recycler_view.layoutManager = LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false)
+        recycler_view.layoutManager = CardStackLayoutManager()
 
         recycler_view.adapter = adapter
 
